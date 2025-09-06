@@ -55,6 +55,8 @@ jobs:
           make config ARCH=arm
           make check-sanitizer || exit 1
           make check || exit 1
+    - name: Continuous Benchmark
+      uses: benchmark-action/github-action-benchmark@v1.20.7
 
   coding-style:
     runs-on: ubuntu-24.04
