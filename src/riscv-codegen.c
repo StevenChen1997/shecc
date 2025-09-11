@@ -77,6 +77,7 @@ void update_elf_offset(ph2_ir_t *ph2_ir)
             elf_offset += 108;
         return;
     case OP_load_data_address:
+    case OP_load_rodata_address:
     case OP_neq:
     case OP_geq:
     case OP_leq:
@@ -126,6 +127,10 @@ void cfg_flatten(void)
     elf_offset += 24;
 
     for (func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         /* reserve stack */
         ph2_ir_t *flatten_ir = add_ph2_ir(OP_define);
         flatten_ir->src0 = func->stack_size;
@@ -259,6 +264,10 @@ void emit_ph2_ir(ph2_ir_t *ph2_ir)
     case OP_load_data_address:
         emit(__lui(rd, rv_hi(elf_data_start + ph2_ir->src0)));
         emit(__addi(rd, rd, rv_lo(elf_data_start + ph2_ir->src0)));
+        return;
+    case OP_load_rodata_address:
+        emit(__lui(rd, rv_hi(elf_rodata_start + ph2_ir->src0)));
+        emit(__addi(rd, rd, rv_lo(elf_rodata_start + ph2_ir->src0)));
         return;
     case OP_address_of_func:
         func = find_func(ph2_ir->func_name);
@@ -420,11 +429,11 @@ void emit_ph2_ir(ph2_ir_t *ph2_ir)
         emit(__andi(rd, rs1, rs2));
         return;
     case OP_sign_ext:
-        /* TODO: Allow to sign extends to other types */
+        /* TODO: Support sign extension to types other than int */
         emit(__andi(rd, rs1, 0xFF));
         emit(__slli(rd, rd, 24));
         emit(__srai(rd, rd, 24));
-        /* TODO: Allow user to switch to Zbb extension if needed */
+        /* TODO: Consider Zbb extension for improved bit manipulation */
         /* emit(__sext_b(rd, rs1)); */
         return;
     case OP_cast:
@@ -439,7 +448,8 @@ void emit_ph2_ir(ph2_ir_t *ph2_ir)
 void code_generate(void)
 {
     elf_data_start = elf_code_start + elf_offset;
-    func_t *func;
+    elf_rodata_start = elf_data_start + elf_data->size;
+    elf_bss_start = elf_rodata_start + elf_rodata->size;
 
     /* start: save original sp in s0; allocate global stack; run init */
     emit(__addi(__s0, __sp, 0));

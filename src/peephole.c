@@ -34,6 +34,7 @@ bool is_fusible_insn(ph2_ir_t *ph2_ir)
     case OP_load:   /* Memory operations */
     case OP_global_load:
     case OP_load_data_address:
+    case OP_load_rodata_address:
         return true;
     default:
         return false;
@@ -348,7 +349,6 @@ bool redundant_move_elim(ph2_ir_t *ph2_ir)
 
     return false;
 }
-
 
 /* Load/store elimination for consecutive memory operations.
  * Removes redundant loads and dead stores that access the same memory location.
@@ -819,7 +819,7 @@ bool triple_pattern_optimization(ph2_ir_t *ph2_ir)
         return true;
     }
 
-    /* FIXME: Additional patterns for future implementation:
+    /* FIXME: Additional optimization patterns to implement:
      *
      * Pattern 3: Load-op-store with same location
      * {load r1, [addr]; op r2, r1, ...; store r2, [addr]}
@@ -878,6 +878,10 @@ bool triple_pattern_optimization(ph2_ir_t *ph2_ir)
 void peephole(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         /* Local peephole optimizations on post-register-allocation IR */
         for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
             for (ph2_ir_t *ir = bb->ph2_ir_list.head; ir; ir = ir->next) {

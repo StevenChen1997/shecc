@@ -8,8 +8,8 @@
 /* Allocate registers from IR. The linear-scan algorithm now expects a minimum
  * of 7 available registers (typical for RISC-style architectures).
  *
- * TODO: Implement the "-O level" option. This allocator now always drops the
- * dead variable and does NOT wrtie it back to the stack.
+ * TODO: Implement "-O level" optimization control. Currently the allocator
+ * always performs dead variable elimination without writing back to stack.
  */
 
 #include "defs.h"
@@ -390,7 +390,9 @@ void extend_liveness(basic_block_t *bb, insn_t *insn, var_t *var, int offset)
 
 void reg_alloc(void)
 {
-    /* TODO: .bss and .data section */
+    /* TODO: Add proper .bss and .data section support for uninitialized /
+     * initialized globals
+     */
     for (insn_t *global_insn = GLOBAL_FUNC->bbs->insn_list.head; global_insn;
          global_insn = global_insn->next) {
         ph2_ir_t *ir;
@@ -441,6 +443,7 @@ void reg_alloc(void)
             break;
         case OP_load_constant:
         case OP_load_data_address:
+        case OP_load_rodata_address:
             dest = prepare_dest(GLOBAL_FUNC->bbs, global_insn->rd, -1, -1);
             ir = bb_add_ph2_ir(GLOBAL_FUNC->bbs, global_insn->opcode);
             ir->src0 = global_insn->rd->init_val;
@@ -518,6 +521,10 @@ void reg_alloc(void)
     }
 
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         func->visited++;
 
         if (!strcmp(func->return_def.var_name, "main"))
@@ -612,6 +619,7 @@ void reg_alloc(void)
                     break;
                 case OP_load_constant:
                 case OP_load_data_address:
+                case OP_load_rodata_address:
                     dest = prepare_dest(bb, insn->rd, -1, -1);
                     ir = bb_add_ph2_ir(bb, insn->opcode);
                     ir->src0 = insn->rd->init_val;
@@ -708,8 +716,10 @@ void reg_alloc(void)
                         ir->src0 = src0;
                         strcpy(ir->func_name, insn->rs2->var_name);
                     } else {
-                        /* FIXME: Avoid outdated content in register after
-                         * storing, but causing some redundant spilling.
+                        /* FIXME: Register content becomes stale after store
+                         * operation. Current workaround causes redundant
+                         * spilling - need better register invalidation
+                         * strategy.
                          */
                         spill_alive(bb, insn);
                         src0 = prepare_operand(bb, insn->rs1, -1);
@@ -887,9 +897,9 @@ void dump_ph2_ir(void)
     for (int i = 0; i < ph2_ir_idx; i++) {
         ph2_ir_t *ph2_ir = PH2_IR_FLATTEN[i];
 
-        int rd = ph2_ir->dest + 48;
-        int rs1 = ph2_ir->src0 + 48;
-        int rs2 = ph2_ir->src1 + 48;
+        const int rd = ph2_ir->dest + 48;
+        const int rs1 = ph2_ir->src0 + 48;
+        const int rs2 = ph2_ir->src1 + 48;
 
         switch (ph2_ir->op) {
         case OP_define:
@@ -905,6 +915,9 @@ void dump_ph2_ir(void)
             break;
         case OP_load_data_address:
             printf("\t%%x%c = .data(%d)", rd, ph2_ir->src0);
+            break;
+        case OP_load_rodata_address:
+            printf("\t%%x%c = .rodata(%d)", rd, ph2_ir->src0);
             break;
         case OP_address_of:
             printf("\t%%x%c = %%sp + %d", rd, ph2_ir->src0);

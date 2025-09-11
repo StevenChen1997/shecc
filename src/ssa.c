@@ -116,6 +116,10 @@ void build_rpo(void)
 {
     bb_traversal_args_t *args = arena_alloc_traversal_args();
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         args->func = func;
         args->bb = func->bbs;
 
@@ -158,6 +162,10 @@ basic_block_t *intersect(basic_block_t *i, basic_block_t *j)
 void build_idom(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         bool changed;
 
         func->bbs->idom = func->bbs;
@@ -230,6 +238,10 @@ void build_dom(void)
 {
     bb_traversal_args_t *args = arena_alloc_traversal_args();
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         args->func = func;
         args->bb = func->bbs;
 
@@ -264,6 +276,10 @@ void build_df(void)
 {
     bb_traversal_args_t *args = arena_alloc_traversal_args();
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         args->func = func;
         args->bb = func->bbs;
 
@@ -287,6 +303,10 @@ basic_block_t *reverse_intersect(basic_block_t *i, basic_block_t *j)
 void build_r_idom(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         bool changed;
 
         func->exit->r_idom = func->exit;
@@ -354,6 +374,10 @@ void build_rdom(void)
 {
     bb_traversal_args_t *args = arena_alloc_traversal_args();
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         args->func = func;
         args->bb = func->exit;
 
@@ -398,6 +422,10 @@ void build_rdf(void)
 {
     bb_traversal_args_t *args = arena_alloc_traversal_args();
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         args->func = func;
         args->bb = func->exit;
 
@@ -439,6 +467,10 @@ void use_chain_delete(use_chain_t *u, var_t *var)
 void use_chain_build(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
             for (insn_t *i = bb->insn_list.head; i; i = i->next) {
                 if (i->rs1)
@@ -545,6 +577,10 @@ void solve_globals(void)
 {
     bb_traversal_args_t *args = arena_alloc_traversal_args();
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         args->func = func;
         args->bb = func->bbs;
 
@@ -606,6 +642,10 @@ bool insert_phi_insn(basic_block_t *bb, var_t *var)
 void solve_phi_insertion(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         for (symbol_t *sym = func->global_sym_list.head; sym; sym = sym->next) {
             var_t *var = sym->var;
 
@@ -798,8 +838,14 @@ void bb_solve_phi_params(basic_block_t *bb)
 void solve_phi_params(void)
 {
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         for (int i = 0; i < func->num_params; i++) {
-            /* FIXME: Rename arguments directly, might be not good here. */
+            /* FIXME: Direct argument renaming in SSA construction phase may
+             * interfere with later optimization passes
+             */
             var_t *var = require_var(func->bbs->scope);
             var_t *base = &func->param_defs[i];
             memcpy(var, base, sizeof(var_t));
@@ -857,7 +903,6 @@ void bb_unwind_phi(func_t *func, basic_block_t *bb)
         for (phi_operand_t *operand = insn->phi_ops; operand;
              operand = operand->next)
             append_unwound_phi_insn(operand->from, insn->rd, operand->var);
-        /* TODO: Release dangling phi instruction */
     }
 
     bb->insn_list.head = insn;
@@ -871,6 +916,10 @@ void unwind_phi(void)
 {
     bb_traversal_args_t *args = arena_alloc_traversal_args();
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         args->func = func;
         args->bb = func->bbs;
 
@@ -1029,6 +1078,11 @@ void bb_dump(FILE *fd, func_t *func, basic_block_t *bb)
                         insn->rd->var_name, insn->rd->subscript,
                         insn->rd->init_val);
                 break;
+            case OP_load_rodata_address:
+                sprintf(str, "<%s<SUB>%d</SUB> := [.rodata] + %d>",
+                        insn->rd->var_name, insn->rd->subscript,
+                        insn->rd->init_val);
+                break;
             case OP_address_of:
                 sprintf(str, "<%s<SUB>%d</SUB> := &amp;%s<SUB>%d</SUB>>",
                         insn->rd->var_name, insn->rd->subscript,
@@ -1127,7 +1181,7 @@ void bb_dump(FILE *fd, func_t *func, basic_block_t *bb)
                 break;
             case OP_sign_ext:
                 sprintf(str,
-                        "<%s<SUB>%s</SUB> := sign_ext %s<SUB>%d</SUB>, %d>",
+                        "<%s<SUB>%d</SUB> := sign_ext %s<SUB>%d</SUB>, %d>",
                         insn->rd->var_name, insn->rd->subscript,
                         insn->rs1->var_name, insn->rs1->subscript, insn->sz);
                 break;
@@ -1172,6 +1226,10 @@ void dump_cfg(char name[])
     fprintf(fd, "strict digraph CFG {\n");
     fprintf(fd, "node [shape=box]\n");
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         func->visited++;
         fprintf(fd, "subgraph cluster_%p {\n", func);
         fprintf(fd, "label=\"%p (%s)\"\n", func, func->return_def.var_name);
@@ -1201,6 +1259,10 @@ void dump_dom(char name[])
     fprintf(fd, "node [shape=box]\n");
     fprintf(fd, "splines=polyline\n");
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         fprintf(fd, "subgraph cluster_%p {\n", func);
         fprintf(fd, "label=\"%p\"\n", func);
         dom_dump(fd, func->bbs);
@@ -1732,6 +1794,10 @@ void dce_sweep(void)
     int total_eliminated = 0; /* Track effectiveness */
 
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
             /* Skip unreachable blocks entirely */
             if (is_block_unreachable(bb)) {
@@ -1804,6 +1870,10 @@ void optimize(void)
     while (sccp_changed && sccp_iterations < 5) {
         sccp_changed = false;
         for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+            /* Skip function declarations without bodies */
+            if (!func->bbs)
+                continue;
+
             if (simple_sccp(func))
                 sccp_changed = true;
         }
@@ -1811,10 +1881,19 @@ void optimize(void)
     }
 
     /* Run constant cast optimization for truncation */
-    for (func_t *func = FUNC_LIST.head; func; func = func->next)
+    for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         optimize_constant_casts(func);
+    }
 
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         /* basic block level (control flow) optimizations */
 
         for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
@@ -2182,6 +2261,10 @@ void optimize(void)
 
     /* Phi node optimization - eliminate trivial phi nodes */
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
             for (insn_t *insn = bb->insn_list.head; insn; insn = insn->next) {
                 if (insn->opcode == OP_phi && insn->phi_ops) {
@@ -2234,6 +2317,10 @@ void optimize(void)
 
     /* Mark useful instructions */
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         for (basic_block_t *bb = func->bbs; bb; bb = bb->rpo_next) {
             dce_insn(bb);
         }
@@ -2278,6 +2365,10 @@ void build_reversed_rpo(void)
 {
     bb_traversal_args_t *args = arena_alloc_traversal_args();
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         func->bb_cnt = 0;
         args->func = func;
         args->bb = func->exit;
@@ -2513,6 +2604,10 @@ void liveness_analysis(void)
 {
     bb_traversal_args_t *args = arena_alloc_traversal_args();
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         args->func = func;
         args->bb = func->bbs;
 
@@ -2527,6 +2622,10 @@ void liveness_analysis(void)
     }
 
     for (func_t *func = FUNC_LIST.head; func; func = func->next) {
+        /* Skip function declarations without bodies */
+        if (!func->bbs)
+            continue;
+
         basic_block_t *bb = func->exit;
         bool changed;
         do {
